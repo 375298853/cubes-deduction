@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>五块积木推理演示 — ? = 4</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#EFEDE6;}
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+  #title{position:fixed;left:20px;top:18px;z-index:10;background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.08);
+    border-radius:12px;padding:10px 16px;font-size:15px;font-weight:600;color:#2C2C2A;}
+  #title small{display:block;font-weight:400;font-size:12px;color:#6b6a66;margin-top:3px;}
+  #legend{position:fixed;left:20px;bottom:18px;z-index:10;background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.08);
+    border-radius:12px;padding:10px 14px;font-size:12px;color:#444;display:flex;gap:14px;align-items:center;}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+  #panel{position:fixed;right:20px;top:18px;width:320px;max-height:calc(100% - 36px);z-index:10;
+    background:rgba(255,255,255,.94);border:1px solid rgba(0,0,0,.08);border-radius:14px;padding:16px;
+    display:flex;flex-direction:column;box-shadow:0 6px 24px rgba(0,0,0,.08);}
+  #stepTitle{font-size:15px;font-weight:600;color:#2C2C2A;margin-bottom:8px;}
+  #stepLines{font-size:13px;line-height:1.7;color:#444;flex:1;overflow:auto;}
+  #stepLines .eq{font-family:ui-monospace,Menlo,Consolas,monospace;background:#F4F2EC;border-radius:6px;
+    padding:2px 8px;display:inline-block;margin:2px 0;}
+  #stepLines .key{color:#0C447C;font-weight:600;}
+  #stepLines .warn{color:#993C1D;}
+  #stepLines .ans{color:#854F0B;font-weight:600;font-size:14px;}
+  #dots{display:flex;gap:6px;margin:12px 0 10px;}
+  #dots span{width:22px;height:6px;border-radius:3px;background:#D3D1C7;cursor:pointer;transition:.2s;}
+  #dots span.on{background:#185FA5;}
+  #btns{display:flex;gap:8px;}
+  button{flex:1;border:1px solid rgba(0,0,0,.12);background:#fff;color:#333;border-radius:8px;
+    padding:8px 0;font-size:13px;cursor:pointer;transition:.15s;}
+  button:hover{background:#F1EFE8;}
+  button.primary{background:#185FA5;border-color:#185FA5;color:#fff;}
+  button.primary:hover{background:#0C447C;}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  #steps{margin-top:12px;border-top:1px dashed rgba(0,0,0,.12);padding-top:10px;}
+  .sitem{display:flex;align-items:center;gap:8px;font-size:12px;color:#666;padding:4px 6px;border-radius:6px;cursor:pointer;}
+  .sitem:hover{background:#F1EFE8;}
+  .sitem.on{background:#E6F1FB;color:#0C447C;font-weight:600;}
+  .sitem .n{width:18px;height:18px;border-radius:50%;background:#D3D1C7;color:#fff;font-size:11px;
+    display:flex;align-items:center;justify-content:center;flex:none;}
+  .sitem.on .n{background:#185FA5;}
+  @media (max-width:760px){#panel{width:calc(100% - 40px);top:auto;bottom:12px;max-height:46%;}#legend{display:none;}}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="title">五块积木：动态拆解推理<small>相对两面之和 = 7 ｜ 相贴两面之和 = 8 ｜ 拖动旋转 · 滚轮缩放</small></div>
+<div id="legend">
+  <span><i class="sw" style="background:#D85A30"></i>题目已知</span>
+  <span><i class="sw" style="background:#378ADD"></i>逐步推出</span>
+  <span><i class="sw" style="background:#EF9F27"></i>最终答案</span>
+</div>
+<div id="panel">
+  <div id="stepTitle"></div>
+  <div id="stepLines"></div>
+  <div id="dots"></div>
+  <div id="btns">
+    <button id="prev">← 上一步</button>
+    <button id="play" class="primary">▶ 自动播放</button>
+    <button id="next">下一步 →</button>
+  </div>
+  <div id="steps"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------- 场景 ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xEFEDE6);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(5.2, 4.6, 8.2);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(1.4, 1.1, 0);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x9a968a, 1.1));
+const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+dl.position.set(6, 10, 7);
+scene.add(dl);
+
+/* ---------- 积木定义 ---------- */
+/* 摆放：竖列 ①②③ 在左（自上而下），底部一行 ③④⑤ 向右延伸 */
+const CUBES = [
+  {id:'①', base:[0,2,0], dir:[0,2.8,0]},   // 顶块
+  {id:'②', base:[0,1,0], dir:[0,1.4,0]},   // 中块
+  {id:'③', base:[0,0,0], dir:[0,0,0]},     // 底块(转角)
+  {id:'④', base:[1,0,0], dir:[1.6,0,0]},
+  {id:'⑤', base:[2,0,0], dir:[3.2,0,0]},
+];
+const FACE_IDX = {right:0,left:1,top:2,bottom:3,front:4,back:5};
+
+function labelTex(txt, bg, fg, big){
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0,0,256,256);
+  g.fillStyle = fg;
+  g.font = 'bold ' + (big?190:170) + 'px sans-serif';
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillText(txt, 128, 138);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+const STYLE = {
+  given:{bg:'#F7C1C1', fg:'#791F1F', hl:0xD85A30},
+  ded:  {bg:'#B5D4F4', fg:'#0C447C', hl:0x378ADD},
+  ans:  {bg:'#FAC775', fg:'#633806', hl:0xEF9F27},
+  q:    {bg:'#4a4a48', fg:'#ffffff', hl:0x888780},
+};
+const matCache = {};
+function labelMat(n, style){
+  const key = n + '_' + style;
+  if(!matCache[key]){
+    const s = STYLE[style];
+    matCache[key] = new THREE.MeshLambertMaterial({map: labelTex(n, s.bg, s.fg, style==='ans'||style==='q')});
+  }
+  return matCache[key];
+}
+function plainMat(){ return new THREE.MeshLambertMaterial({color:0xDCD8CB}); }
+
+function makeHL(face){
+  const p = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.05,1.05),
+    new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.35, side:THREE.DoubleSide, depthWrite:false})
+  );
+  const d = 0.535;
+  if(face==='top'){p.rotation.x=-Math.PI/2; p.position.y=d;}
+  if(face==='bottom'){p.rotation.x=Math.PI/2; p.position.y=-d;}
+  if(face==='right'){p.rotation.y=Math.PI/2; p.position.x=d;}
+  if(face==='left'){p.rotation.y=-Math.PI/2; p.position.x=-d;}
+  if(face==='front'){p.position.z=d;}
+  if(face==='back'){p.rotation.y=Math.PI; p.position.z=-d;}
+  return p;
+}
+
+const cubes = CUBES.map(def=>{
+  const grp = new THREE.Group();
+  const geo = new THREE.BoxGeometry(1,1,1);
+  const mats = [];
+  for(let f=0; f<6; f++) mats.push(plainMat());
+  const mesh = new THREE.Mesh(geo, mats);
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({color:0x3a3a3a})
+  );
+  grp.add(mesh, edges);
+  const hls = {};
+  ['right','left','top','bottom','front','back'].forEach(f=>{
+    const p = makeHL(f); p.visible=false; grp.add(p); hls[f]=p;
+  });
+  grp.position.set(...def.base);
+  scene.add(grp);
+  return {grp, mats, hls, def};
+});
+
+/* ---------- 步骤脚本（labels 逐条累积，后写覆盖先写） ---------- */
+const given3a = {c:0,f:'top',   n:'3', s:'given', hl:true};
+const given3b = {c:2,f:'front', n:'3', s:'given', hl:true};
+const givenQ  = {c:4,f:'right', n:'?', s:'q',     hl:true};
+
+const STEPS = [
+  { t:'题目条件', explode:0,
+    lines:[
+      '5 个积木每个面分别写着 1~6。',
+      '规则：<span class="key">相对两面之和 = 7</span>，<span class="key">相贴两面之和 = 8</span>。',
+      '已知：① 顶面 = 3，③ 前面 = 3，⑤ 右面 = ?',
+      '拖动画面可旋转观察。点击「下一步」开始拆解推理。',
+    ],
+    labels:[given3a, given3b, givenQ] },
+
+  { t:'第 1 步 · ① 的底面', explode:0.38,
+    lines:[
+      '相对面之和为 7：',
+      '<span class="eq">① 底面 = 7 − 3 = <span class="key">4</span></span>',
+      '看：顶块被提起来，露出底面的 4。',
+    ],
+    labels:[given3a, given3b, givenQ, {c:0,f:'bottom',n:'4',s:'ded',hl:true}] },
+
+  { t:'第 2 步 · ② 的顶面与底面', explode:0.55,
+    lines:[
+      '① 底面与 ② 顶面相贴，和为 8：',
+      '<span class="eq">② 顶面 = 8 − 4 = <span class="key">4</span></span>',
+      '再由相对面之和为 7：',
+      '<span class="eq">② 底面 = 7 − 4 = <span class="key">3</span></span>',
+    ],
+    labels:[given3a, given3b, givenQ,
+      {c:0,f:'bottom',n:'4',s:'ded',hl:true},
+      {c:1,f:'top',n:'4',s:'ded',hl:true},
+      {c:1,f:'bottom',n:'3',s:'ded',hl:true}] },
+
+  { t:'第 3 步 · ③ 的顶面与底面', explode:0.7,
+    lines:[
+      '② 底面与 ③ 顶面相贴，和为 8：',
+      '<span class="eq">③ 顶面 = 8 − 3 = <span class="key">5</span></span>',
+      '相对面之和为 7：',
+      '<span class="eq">③ 底面 = 7 − 5 = <span class="key">2</span></span>',
+      '此时 ③ 已用：前3/后4、上5/下2。',
+    ],
+    labels:[given3a, given3b, givenQ,
+      {c:0,f:'bottom',n:'4',s:'ded'},
+      {c:1,f:'top',n:'4',s:'ded'},
+      {c:1,f:'bottom',n:'3',s:'ded'},
+      {c:2,f:'top',n:'5',s:'ded',hl:true},
+      {c:2,f:'bottom',n:'2',s:'ded',hl:true}] },
+
+  { t:'第 4 步 · ③ 的右面（关键）', explode:0.85,
+    lines:[
+      '③ 只剩数字 1 和 6 分给左、右两面。',
+      '若右面 = 1，则相贴的 ④ 左面 = 8 − 1 = 7，<span class="warn">超过 6，矛盾！</span>',
+      '所以：',
+      '<span class="eq">③ 右面 = <span class="key">6</span>，左面 = 1</span>',
+      '<span class="eq">④ 左面 = 8 − 6 = <span class="key">2</span></span>',
+      '<span class="eq">④ 右面 = 7 − 2 = <span class="key">5</span></span>',
+    ],
+    labels:[given3a, given3b, givenQ,
+      {c:0,f:'bottom',n:'4',s:'ded'},
+      {c:1,f:'top',n:'4',s:'ded'},
+      {c:1,f:'bottom',n:'3',s:'ded'},
+      {c:2,f:'top',n:'5',s:'ded'},
+      {c:2,f:'bottom',n:'2',s:'ded'},
+      {c:2,f:'left',n:'1',s:'ded'},
+      {c:2,f:'right',n:'6',s:'ded',hl:true},
+      {c:3,f:'left',n:'2',s:'ded',hl:true},
+      {c:3,f:'right',n:'5',s:'ded'}] },
+
+  { t:'第 5 步 · 得出答案', explode:1,
+    lines:[
+      '④ 右面与 ⑤ 左面相贴，和为 8：',
+      '<span class="eq">⑤ 左面 = 8 − 5 = <span class="key">3</span></span>',
+      '? 在 ⑤ 的右面，与左面相对：',
+      '<span class="eq">? = 7 − 3 = <span class="key">4</span></span>',
+      '<span class="ans">答案：? = 4 ✔　全部相贴面 4+4、3+5、6+2、5+3 均等于 8，验证成立。</span>',
+    ],
+    labels:[given3a, given3b,
+      {c:0,f:'bottom',n:'4',s:'ded'},
+      {c:1,f:'top',n:'4',s:'ded'},
+      {c:1,f:'bottom',n:'3',s:'ded'},
+      {c:2,f:'top',n:'5',s:'ded'},
+      {c:2,f:'bottom',n:'2',s:'ded'},
+      {c:2,f:'left',n:'1',s:'ded'},
+      {c:2,f:'right',n:'6',s:'ded'},
+      {c:3,f:'left',n:'2',s:'ded'},
+      {c:3,f:'right',n:'5',s:'ded'},
+      {c:4,f:'left',n:'3',s:'ded',hl:true},
+      {c:4,f:'right',n:'4',s:'ans',hl:true}] },
+];
+
+/* ---------- 步骤应用 ---------- */
+let cur = 0, activeHL = [], playTimer = null;
+
+function applyStep(i){
+  cur = i;
+  const st = STEPS[i];
+  /* 累积标签（后面的步骤覆盖同面的旧标签，如 ? → 4） */
+  const map = {};
+  for(let k=0;k<=i;k++) STEPS[k].labels.forEach(L=>{ map[L.c+':'+L.f] = L; });
+  cubes.forEach((cb,ci)=>{
+    Object.keys(FACE_IDX).forEach(f=>{
+      const L = map[ci+':'+f];
+      cb.mats[FACE_IDX[f]] = L ? labelMat(L.n, L.s) : plainMat();
+    });
+    cb.grp.children[0].material = cb.mats;
+  });
+  /* 高亮：仅当前步骤带 hl 的面 */
+  activeHL = [];
+  cubes.forEach(cb=>{
+    ['right','left','top','bottom','front','back'].forEach(f=>{
+      cb.hls[f].visible = false;
+    });
+  });
+  st.labels.forEach(L=>{
+    if(L.hl){
+      const p = cubes[L.c].hls[L.f];
+      p.material.color.set(STYLE[L.s].hl);
+      p.visible = true;
+      activeHL.push(p);
+    }
+  });
+  /* 文本 */
+  document.getElementById('stepTitle').textContent = st.t;
+  document.getElementById('stepLines').innerHTML = st.lines.map(l=>'<div>'+l+'</div>').join('');
+  document.querySelectorAll('#dots span').forEach((d,k)=>d.classList.toggle('on',k===i));
+  document.querySelectorAll('.sitem').forEach((s,k)=>s.classList.toggle('on',k===i));
+  document.getElementById('prev').disabled = i===0;
+  document.getElementById('next').disabled = i===STEPS.length-1;
+}
+
+/* ---------- UI ---------- */
+const dots = document.getElementById('dots');
+STEPS.forEach((_,i)=>{ const s=document.createElement('span'); s.onclick=()=>{stopPlay();applyStep(i);}; dots.appendChild(s); });
+const list = document.getElementById('steps');
+STEPS.forEach((st,i)=>{
+  const d = document.createElement('div');
+  d.className='sitem';
+  d.innerHTML = '<span class="n">'+(i===0?'题':i)+'</span><span>'+st.t+'</span>';
+  d.onclick = ()=>{stopPlay();applyStep(i);};
+  list.appendChild(d);
+});
+document.getElementById('prev').onclick = ()=>{stopPlay(); applyStep(Math.max(0,cur-1));};
+document.getElementById('next').onclick = ()=>{stopPlay(); applyStep(Math.min(STEPS.length-1,cur+1));};
+const playBtn = document.getElementById('play');
+function stopPlay(){ if(playTimer){clearInterval(playTimer);playTimer=null;playBtn.textContent='▶ 自动播放';} }
+playBtn.onclick = ()=>{
+  if(playTimer){stopPlay();return;}
+  playBtn.textContent='⏸ 暂停';
+  if(cur===STEPS.length-1) applyStep(0);
+  playTimer = setInterval(()=>{
+    if(cur<STEPS.length-1) applyStep(cur+1);
+    else stopPlay();
+  }, 3800);
+};
+addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'){stopPlay();applyStep(Math.min(STEPS.length-1,cur+1));}
+  if(e.key==='ArrowLeft'){stopPlay();applyStep(Math.max(0,cur-1));}
+});
+
+/* ---------- 动画循环 ---------- */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  cubes.forEach(cb=>{
+    const target = new THREE.Vector3(
+      cb.def.base[0] + cb.def.dir[0]*STEPS[cur].explode,
+      cb.def.base[1] + cb.def.dir[1]*STEPS[cur].explode,
+      cb.def.base[2] + cb.def.dir[2]*STEPS[cur].explode
+    );
+    cb.grp.position.lerp(target, 0.07);
+  });
+  activeHL.forEach((p,k)=>{
+    p.material.opacity = 0.22 + 0.18 * (0.5 + 0.5*Math.sin(t*4 + k));
+  });
+  controls.update();
+  renderer.render(scene, camera);
+}
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+applyStep(0);
+animate();
+</script>
+</body>
+</html>
